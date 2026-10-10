@@ -1,0 +1,174 @@
+// schema.prisma
+// Схема БД «Генератор путешествий» — PostgreSQL + Prisma
+// Таблицы: пользователи, путешествия, предпочтения пользователя,
+// туристические объекты, дни путешествия, активности.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────
+// Пользователи
+// ──────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  trips Trip[]
+
+  @@map("users")
+}
+
+// ──────────────────────────────────────────────
+// Путешествия
+// ──────────────────────────────────────────────
+
+enum Pace {
+  RELAXED
+  MEDIUM
+  INTENSE
+}
+
+enum TripStatus {
+  DRAFT
+  GENERATING
+  READY
+  FAILED
+}
+
+model Trip {
+  id             String     @id @default(uuid())
+  userId         String
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  city           String
+  country        String?
+  latitude       Float?
+  longitude      Float?
+  startDate      DateTime   @db.Date
+  endDate        DateTime   @db.Date
+  travelers      Int        @default(1)
+  budget         Decimal    @db.Decimal(10, 2)
+  currency       String     @default("RUB")
+  pace           Pace       @default(MEDIUM)
+  status         TripStatus @default(DRAFT)
+  currentStep    String?    // текст для чек-листа генерации ("Подбираем места" и т.п.)
+  estimatedSpend Decimal?   @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  preferences TripCategory[]
+  days        TripDay[]
+
+  @@index([userId])
+  @@map("trips")
+}
+
+// ──────────────────────────────────────────────
+// Предпочтения пользователя (категории интересов конкретного путешествия)
+// ──────────────────────────────────────────────
+
+enum Category {
+  HISTORY
+  ARCHITECTURE
+  CULTURE
+  FOOD
+  NATURE
+  ENTERTAINMENT
+  SHOPPING
+  NIGHTLIFE
+}
+
+model TripCategory {
+  id       String   @id @default(uuid())
+  tripId   String
+  trip     Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  category Category
+
+  @@unique([tripId, category])
+  @@map("trip_categories")
+}
+
+// ──────────────────────────────────────────────
+// Туристические объекты (кэш данных из внешних API)
+// ──────────────────────────────────────────────
+
+model Place {
+  id          String   @id @default(uuid())
+  externalId  String? // id объекта во внешнем источнике (для дедупликации при повторных запросах)
+  source      String? // "opentripmap" | "google_places" | ...
+
+  name        String
+  city        String
+  category    Category
+  latitude    Float
+  longitude   Float
+  rating      Float?
+  avgCost     Decimal? @db.Decimal(10, 2)
+  openingHours Json?   // { "mon": "09:00-18:00", ... } — гибкая структура под разные источники
+  imageUrl    String?
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  activities Activity[]
+
+  @@unique([source, externalId])
+  @@index([city, category])
+  @@map("places")
+}
+
+// ──────────────────────────────────────────────
+// Дни путешествия
+// ──────────────────────────────────────────────
+
+model TripDay {
+  id        String   @id @default(uuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  dayNumber Int
+  date      DateTime @db.Date
+
+  activities Activity[]
+
+  @@unique([tripId, dayNumber])
+  @@map("trip_days")
+}
+
+// ──────────────────────────────────────────────
+// Активности (пункты маршрута внутри дня)
+// ──────────────────────────────────────────────
+
+model Activity {
+  id         String  @id @default(uuid())
+  tripDayId  String
+  tripDay    TripDay @relation(fields: [tripDayId], references: [id], onDelete: Cascade)
+  placeId    String
+  place      Place   @relation(fields: [placeId], references: [id])
+
+  orderIndex          Int // позиция в дне — под drag & drop
+  startTime            DateTime
+  endTime              DateTime
+  durationMinutes      Int
+  travelToNextMinutes  Int      @default(0)
+  cost                 Decimal  @default(0) @db.Decimal(10, 2)
+  aiDescription        String? // короткое описание/объяснение выбора от AI-модуля
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tripDayId, orderIndex])
+  @@map("activities")
+}

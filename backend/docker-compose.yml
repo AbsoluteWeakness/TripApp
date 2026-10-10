@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: trip_user
+      POSTGRES_PASSWORD: trip_pass
+      POSTGRES_DB: trip_planner
+    ports:
+      - "5432:5432"
+    volumes:
+      - trip_db_data:/var/lib/postgresql/data
+
+volumes:
+  trip_db_data:
