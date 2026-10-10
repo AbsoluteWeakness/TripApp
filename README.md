@@ -1,3 +1,5 @@
+![Backend tests](https://github.com/AbsoluteWeakness/TripApp/actions/workflows/backend-tests.yml/badge.svg)
+
 # Генератор путешествий
 
 Приложение состоит из React/Vite-фронтенда, NestJS API и PostgreSQL.
