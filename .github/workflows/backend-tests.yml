@@ -1,4 +1,4 @@
-name: Backend e2e tests
+name: Backend tests
 
 on:
   push:
@@ -43,6 +43,10 @@ jobs:
 
       - name: Generate Prisma client
         run: npx prisma generate
+
+      # быстрые тесты без БД и сети — идут первыми
+      - name: Run unit tests
+        run: npm run test:unit
 
       # pretest:e2e сам накатит миграции на trip_planner_test
       - name: Run e2e tests
