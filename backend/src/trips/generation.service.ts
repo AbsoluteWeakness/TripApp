@@ -52,7 +52,14 @@ export class GenerationService {
 
   private countNights(startDate: Date, endDate: Date): number {
     const ms = endDate.getTime() - startDate.getTime();
-    return Math.max(1, Math.round(ms / (1000 * 60 * 60 * 24)));
+    const diffDays = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+    return Math.max(1, diffDays);
+  }
+
+  private countTripDays(startDate: Date, endDate: Date): number {
+    const ms = endDate.getTime() - startDate.getTime();
+    const diffDays = Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
+    return Math.max(1, diffDays + 1);
   }
 
   private async setStep(tripId: string, currentStep: string) {
@@ -80,6 +87,11 @@ export class GenerationService {
   ): number {
     const walkingDistanceKm = this.distanceKm(first, second) * CITY_ROUTE_DETOUR_FACTOR;
     return Math.max(5, Math.round((walkingDistanceKm / WALKING_SPEED_KMH) * 60));
+  }
+
+  private placeFingerprint(place: { name?: unknown; latitude?: number; longitude?: number }): string {
+    const rawName = typeof place?.name === 'string' ? place.name : String(place?.name ?? '');
+    return `${rawName.trim().toLowerCase()}|${Number(place?.latitude ?? 0).toFixed(5)}|${Number(place?.longitude ?? 0).toFixed(5)}`;
   }
 
   private orderByWalkingDistance<T extends { place: { latitude: number; longitude: number } }>(
@@ -145,10 +157,11 @@ export class GenerationService {
 
       await this.setStep(tripId, 'Подбираем места');
       const categories = trip.preferences.map((p) => p.category);
+      const tripDays = this.countTripDays(trip.startDate, trip.endDate);
       const nights = this.countNights(trip.startDate, trip.endDate);
       const perDay = ACTIVITIES_PER_DAY[trip.pace];
       const forecast = await this.weather.getDailyForecast(point.lat, point.lon, trip.startDate);
-      const totalNeeded = nights * perDay;
+      const totalNeeded = tripDays * perDay;
       // берём с запасом по каждой категории — часть отсеется бюджетом/дублями
       const perCategoryLimit = Math.max(3, Math.ceil((totalNeeded * 1.3) / Math.max(1, categories.length)));
 
@@ -188,11 +201,8 @@ export class GenerationService {
       }
 
       const uniquePool = pool.filter((item, index, items) => {
-        const key = `${item.place.name.trim().toLowerCase()}|${item.place.latitude.toFixed(5)}|${item.place.longitude.toFixed(5)}`;
-        return items.findIndex((candidate) => {
-          const candidateKey = `${candidate.place.name.trim().toLowerCase()}|${candidate.place.latitude.toFixed(5)}|${candidate.place.longitude.toFixed(5)}`;
-          return candidateKey === key;
-        }) === index;
+        const key = this.placeFingerprint(item.place);
+        return items.findIndex((candidate) => this.placeFingerprint(candidate.place) === key) === index;
       });
 
       await this.setStep(tripId, 'Оптимизируем маршрут');
@@ -203,7 +213,7 @@ export class GenerationService {
       await this.prisma.tripDay.deleteMany({ where: { tripId } });
 
       let cursor = 0;
-      for (let dayNumber = 1; dayNumber <= nights; dayNumber++) {
+      for (let dayNumber = 1; dayNumber <= tripDays; dayNumber++) {
         const date = new Date(trip.startDate);
         date.setDate(date.getDate() + (dayNumber - 1));
 

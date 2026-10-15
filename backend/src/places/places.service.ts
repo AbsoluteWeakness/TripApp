@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Category, Place } from '@prisma/client';
+import { Category, Place, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CATEGORY_COST_HEURISTIC, CATEGORY_TO_KINDS, parseRate } from './kinds-map';
 
@@ -24,6 +24,10 @@ interface RawSearchResult {
   address?: Record<string, string>;
   categories?: string[];
   priceLevel?: number | string;
+  openingHours?: Record<string, unknown> | null;
+  openNow?: boolean | null;
+  status?: string | null;
+  permanentlyClosed?: boolean;
 }
 
 interface RawPlaceDetails {
@@ -36,6 +40,10 @@ interface RawPlaceDetails {
   address?: Record<string, string>;
   categories?: string[];
   priceLevel?: number | string;
+  openingHours?: Record<string, unknown> | null;
+  openNow?: boolean | null;
+  status?: string | null;
+  permanentlyClosed?: boolean;
 }
 
 @Injectable()
@@ -67,6 +75,73 @@ export class PlacesService {
         'GEOAPIFY_API_KEY не задан в .env — зарегистрируйте ключ на myprojects.geoapify.com',
       );
     }
+  }
+
+  private asSafeText(value: unknown, fallback = ''): string {
+    if (typeof value === 'string') return value.trim();
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value).trim();
+    return fallback;
+  }
+
+  private extractOpeningHours(properties: Record<string, any>): Record<string, unknown> | null {
+    const candidates = [
+      properties.opening_hours,
+      properties.openingHours,
+      properties.datasource?.raw?.opening_hours,
+      properties.datasource?.raw?.openingHours,
+      properties.hours,
+      properties.hours_of_operation,
+    ];
+
+    for (const candidate of candidates) {
+      if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
+        return candidate as Record<string, unknown>;
+      }
+    }
+
+    return null;
+  }
+
+  private extractOpenStatus(properties: Record<string, any>): { openNow?: boolean | null; status?: string | null; permanentlyClosed?: boolean } {
+    const candidateStatus = this.asSafeText(
+      properties.status ?? properties.closed ?? properties.permanently_closed ?? properties.datasource?.raw?.status ?? properties.datasource?.raw?.closed ?? properties.datasource?.raw?.permanently_closed,
+      '',
+    ).toLowerCase();
+
+    const openingInfo = this.extractOpeningHours(properties);
+    const openNow =
+      typeof properties.open_now === 'boolean'
+        ? properties.open_now
+        : typeof properties.openNow === 'boolean'
+          ? properties.openNow
+          : typeof properties.datasource?.raw?.open_now === 'boolean'
+            ? properties.datasource.raw.open_now
+            : typeof properties.datasource?.raw?.openNow === 'boolean'
+              ? properties.datasource.raw.openNow
+              : typeof openingInfo?.open_now === 'boolean'
+                ? openingInfo.open_now
+                : typeof openingInfo?.openNow === 'boolean'
+                  ? openingInfo.openNow
+                  : null;
+
+    const status = candidateStatus || (
+      typeof properties.opening_hours === 'string'
+        ? properties.opening_hours
+        : typeof properties.openingHours === 'string'
+          ? properties.openingHours
+          : null
+    );
+
+    return {
+      openNow,
+      status: status || null,
+      permanentlyClosed: Boolean(
+        properties.permanently_closed
+        || properties.datasource?.raw?.permanently_closed
+        || candidateStatus.includes('permanently closed')
+        || candidateStatus.includes('closed permanently')
+      ),
+    };
   }
 
   async geocodeCity(city: string): Promise<GeoPoint | null> {
@@ -128,6 +203,8 @@ export class PlacesService {
       const lon = typeof coordinates[0] === 'number' ? coordinates[0] : point.lon;
       const lat = typeof coordinates[1] === 'number' ? coordinates[1] : point.lat;
 
+      const openStatus = this.extractOpenStatus(properties);
+
       return {
         id: properties.place_id ?? `${properties.name ?? 'geoapify'}-${lon}-${lat}`,
         name: properties.name ?? 'Unnamed place',
@@ -140,6 +217,10 @@ export class PlacesService {
         address: properties.formatted ? { formatted: properties.formatted } : undefined,
         categories: Array.isArray(properties.categories) ? properties.categories : [],
         priceLevel: properties.price_level ?? properties.datasource?.raw?.price_level,
+        openingHours: this.extractOpeningHours(properties),
+        openNow: openStatus.openNow,
+        status: openStatus.status,
+        permanentlyClosed: openStatus.permanentlyClosed,
       };
     });
   }
@@ -176,7 +257,8 @@ export class PlacesService {
 
       const sorted = ranked
         .filter((candidate) => {
-          const coordinateKey = `${candidate.name.trim().toLowerCase()}|${candidate.point.lat.toFixed(5)}|${candidate.point.lon.toFixed(5)}`;
+          const candidateName = this.asSafeText(candidate.name, 'unnamed place');
+          const coordinateKey = `${candidateName.toLowerCase()}|${Number(candidate.point?.lat ?? point.lat).toFixed(5)}|${Number(candidate.point?.lon ?? point.lon).toFixed(5)}`;
           if (usedExternalIds.has(candidate.id) || usedNamesAndCoordinates.has(coordinateKey)) return false;
           usedExternalIds.add(candidate.id);
           usedNamesAndCoordinates.add(coordinateKey);
@@ -197,31 +279,42 @@ export class PlacesService {
   }
 
   private matchesRequestedCategory(candidate: RawSearchResult, requested: Category): boolean {
-    const categories = (candidate.categories ?? []).map((value) => value.toLowerCase());
-    const name = candidate.name.toLowerCase();
+    const categories = (candidate.categories ?? []).map((value) => this.asSafeText(value).toLowerCase());
+    const name = this.asSafeText(candidate.name, '').toLowerCase();
     const searchableText = [
-      candidate.name,
-      candidate.description ?? '',
-      candidate.address?.formatted ?? '',
+      this.asSafeText(candidate.name, ''),
+      this.asSafeText(candidate.description, ''),
+      this.asSafeText(candidate.address?.formatted, ''),
       ...categories,
     ].join(' ').toLowerCase();
     const unnamed = !name || name === 'unnamed place';
     const pathObject = categories.some((value) =>
       value.includes('path') || value.includes('footway') || value.includes('track') || value.includes('route'),
     );
+    const candidateClosed =
+      candidate.permanentlyClosed
+      || (typeof candidate.openNow === 'boolean' && !candidate.openNow)
+      || (typeof candidate.status === 'string' && /(closed|permanently closed|not open|temporarily closed)/i.test(candidate.status));
+    const retailCenterHint = categories.some((value) =>
+      value.includes('mall') || value.includes('shopping') || value.includes('supermarket') || value.includes('market') || value.includes('retail')
+    ) || /(mall|shopping center|trade center|hypermarket|supermarket|marketplace|матрица|пятерочка)/i.test(searchableText);
     const nightlifeHint = /(bar|pub|club|nightclub|lounge|disco|караоке|бар|клуб|ночн|дискотек|телега)/i.test(searchableText)
       || KNOWN_NIGHTLIFE_NAMES.some((knownName) => name.includes(knownName));
     const nightlifeCategory = categories.some((value) =>
       value.includes('bar') || value.includes('pub') || value.includes('nightclub') || value.includes('nightlife') || value.includes('dance'),
     );
 
+    if (candidateClosed) return false;
     if (unnamed || (requested === 'NATURE' && pathObject)) return false;
+    if (requested === 'ARCHITECTURE' && retailCenterHint) return false;
     if (requested === 'FOOD') return !nightlifeHint && !nightlifeCategory;
     if (requested === 'NIGHTLIFE') return nightlifeHint || nightlifeCategory;
     return true;
   }
 
   private async upsertPlace(city: string, category: Category, details: RawPlaceDetails): Promise<Place> {
+    const openingHours = details.openingHours as Prisma.InputJsonValue | undefined;
+
     return this.prisma.place.upsert({
       where: { source_externalId: { source: 'geoapify', externalId: details.id } },
       update: {
@@ -231,6 +324,7 @@ export class PlacesService {
         longitude: details.point.lon,
         rating: parseRate(details.rate),
         avgCost: this.estimateAverageCost(category, details.priceLevel),
+        ...(openingHours ? { openingHours } : {}),
         imageUrl: details.preview?.source ?? null,
         description: details.description ?? details.address?.formatted ?? null,
       },
@@ -244,6 +338,7 @@ export class PlacesService {
         longitude: details.point.lon,
         rating: parseRate(details.rate),
         avgCost: this.estimateAverageCost(category, details.priceLevel),
+        ...(openingHours ? { openingHours } : {}),
         imageUrl: details.preview?.source ?? null,
         description: details.description ?? details.address?.formatted ?? null,
       },

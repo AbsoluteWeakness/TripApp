@@ -8,13 +8,13 @@ import { Category } from '@prisma/client';
  */
 export const CATEGORY_TO_KINDS: Record<Category, string> = {
   HISTORY: 'tourism.sights,heritage',
-  ARCHITECTURE: 'building,architecture,man_made',
+  ARCHITECTURE: 'building,man_made',
   CULTURE: 'entertainment.museum,entertainment.culture,education',
   FOOD: 'catering.restaurant,catering.cafe,catering.fast_food',
   NATURE: 'natural,leisure.park,beach',
   ENTERTAINMENT: 'entertainment,entertainment.theme_park,sport',
   SHOPPING: 'commercial,commercial.supermarket,commercial.shopping_mall',
-  NIGHTLIFE: 'catering.bar,catering.pub,entertainment.nightclub',
+  NIGHTLIFE: 'catering.bar,catering.pub,entertainment',
 };
 
 /**
