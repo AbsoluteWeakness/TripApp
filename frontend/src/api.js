@@ -114,19 +114,21 @@ export function normalizeDay(day) {
 }
 
 export function normalizeTrip(trip) {
-  const startDate = trip.startDate?.slice(0, 10);
-  const endDate = trip.endDate?.slice(0, 10);
+  const city = String(trip?.city || "Неизвестный город");
+  const startDate = trip?.startDate?.slice(0, 10);
+  const endDate = trip?.endDate?.slice(0, 10);
   const dateRange = startDate && endDate ? formatDateRange(startDate, endDate) : "";
 
   return {
     ...trip,
-    budget: Number(trip.budget || 0),
-    estimatedSpend: Number(trip.estimatedSpend || 0),
-    travelers: Number(trip.travelers || 1),
+    city,
+    budget: Number.isFinite(Number(trip?.budget)) ? Number(trip.budget) : 0,
+    estimatedSpend: Number.isFinite(Number(trip?.estimatedSpend)) ? Number(trip.estimatedSpend) : 0,
+    travelers: Number.isFinite(Number(trip?.travelers)) ? Number(trip.travelers) : 1,
     dateRange,
-    code: trip.city.slice(0, 3).toUpperCase(),
-    status: String(trip.status || "DRAFT").toLowerCase(),
-    days: (trip.days || []).map(normalizeDay),
+    code: city.slice(0, 3).toUpperCase() || "GPS",
+    status: String(trip?.status || "DRAFT").toLowerCase(),
+    days: (trip?.days || []).map(normalizeDay),
   };
 }
 

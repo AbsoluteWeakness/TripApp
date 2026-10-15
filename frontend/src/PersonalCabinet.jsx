@@ -120,7 +120,7 @@ function ConfirmDeleteModal({ trip, onCancel, onConfirm }) {
 }
 
 function TripCard({ trip, onOpen, onEdit, onDelete, onRegenerate }) {
-  const status = STATUS_META[trip.status];
+  const status = STATUS_META[trip.status] || STATUS_META.draft;
   const [regenerating, setRegenerating] = useState(false);
 
   const handleRegenerate = () => {
