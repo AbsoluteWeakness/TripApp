@@ -1,15 +1,19 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { PrismaService } from '../src/prisma/prisma.service';
+import { WeatherService } from '../src/trips/weather.service';
 import { createTestApp, cleanDatabase, waitForTripReady } from './utils/test-app';
+import { FakeWeatherService } from './utils/fake-weather.service';
 
 describe('Trips (e2e)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+  let fakeWeather: FakeWeatherService;
 
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
+    fakeWeather = app.get(WeatherService) as unknown as FakeWeatherService;
   });
 
   afterAll(async () => {
@@ -17,6 +21,7 @@ describe('Trips (e2e)', () => {
   });
 
   beforeEach(async () => {
+    fakeWeather.reset();
     await cleanDatabase(prisma);
   });
 
@@ -68,6 +73,61 @@ describe('Trips (e2e)', () => {
     expect(trip.days.length).toBeGreaterThan(0);
     const totalActivities = trip.days.reduce((sum, d) => sum + d.activities.length, 0);
     expect(totalActivities).toBeGreaterThan(0);
+  });
+
+  it('не повторно использует варианты плохой погоды в следующих днях генерации', async () => {
+    const { token } = await registerAndLogin('weather-duplicates@example.com');
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() + 5);
+    const endDate = new Date(startDate);
+    endDate.setDate(endDate.getDate() + 2);
+    const firstDay = startDate.toISOString().slice(0, 10);
+    const secondDay = new Date(startDate);
+    secondDay.setDate(secondDay.getDate() + 1);
+    const thirdDay = new Date(startDate);
+    thirdDay.setDate(thirdDay.getDate() + 2);
+
+    fakeWeather.setDayWeather(firstDay, true);
+    fakeWeather.setDayWeather(secondDay.toISOString().slice(0, 10), false);
+    fakeWeather.setDayWeather(thirdDay.toISOString().slice(0, 10), false);
+
+    const createRes = await request(app.getHttpServer())
+      .post('/api/v1/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send(validTripPayload({
+        startDate: firstDay,
+        endDate: endDate.toISOString().slice(0, 10),
+        categories: ['NATURE', 'CULTURE', 'FOOD'],
+      }))
+      .expect(201);
+
+    expect(await waitForTripReady(prisma, createRes.body.id)).toBe('READY');
+
+    const trip = await prisma.trip.findUniqueOrThrow({
+      where: { id: createRes.body.id },
+      include: {
+        days: {
+          orderBy: { dayNumber: 'asc' },
+          include: { activities: { include: { place: true } } },
+        },
+      },
+    });
+    expect(trip.days).toHaveLength(3);
+
+    const firstDayActivities = trip.days[0].activities;
+    const rainyDayAlternatives = firstDayActivities.filter(
+      (activity) => activity.place.name.endsWith('place 2 in Lisbon'),
+    );
+    expect(rainyDayAlternatives.length).toBeGreaterThan(0);
+    expect(firstDayActivities.some((activity) => activity.place.category === 'NATURE')).toBe(false);
+
+    const allPlaceIds = trip.days.flatMap((day) => day.activities.map((activity) => activity.placeId));
+    expect(new Set(allPlaceIds).size).toBe(allPlaceIds.length);
+
+    const laterDayPlaceIds = new Set(
+      trip.days.slice(1).flatMap((day) => day.activities.map((activity) => activity.placeId)),
+    );
+    expect(rainyDayAlternatives.every((activity) => !laterDayPlaceIds.has(activity.placeId))).toBe(true);
   });
 
   it('помечает путешествие FAILED, если город не нашёлся', async () => {

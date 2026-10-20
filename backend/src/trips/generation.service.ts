@@ -4,7 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PlacesService } from '../places/places.service';
 import { WeatherService } from './weather.service';
 import { CATEGORY_COST_HEURISTIC } from '../places/kinds-map';
-import { distributeItemsAcrossDays } from './distribute-days';
+import { distributeItemsAcrossDays, selectBalancedDayItems } from './distribute-days';
 
 const DAY_START_MINUTES = 9 * 60; // 09:00
 const WALKING_SPEED_KMH = 4.5;
@@ -325,16 +325,12 @@ export class GenerationService {
         .filter((item) => item.id !== day.id)
         .flatMap((item) => item.activities.map((activity) => activity.placeId)),
     );
-    const candidates = byCategory.flatMap((group) =>
-      group.places
-        .filter((place) => !usedByOtherDays.has(place.id))
-        .map((place) => ({ category: group.category, place })),
-    );
-    const uniqueCandidates = candidates.filter(
+    const balancedCandidates = selectBalancedDayItems(byCategory, perDay, usedByOtherDays);
+    const uniqueCandidates = balancedCandidates.filter(
       (item, index, items) => items.findIndex((candidate) => candidate.place.id === item.place.id) === index,
     );
     const dayItems = this.orderByWalkingDistance(
-      uniqueCandidates.slice(0, perDay),
+      uniqueCandidates,
       { latitude: point.lat, longitude: point.lon },
     );
 

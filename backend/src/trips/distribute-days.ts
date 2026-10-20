@@ -31,3 +31,34 @@ export function distributeItemsAcrossDays<TPlace extends { id: string }>(
     return selection;
   });
 }
+
+export function selectBalancedDayItems<TCategory extends string, TPlace extends { id: string }>(
+  groups: { category: TCategory; places: TPlace[] }[],
+  limit: number,
+  excludedPlaceIds: ReadonlySet<string> = new Set(),
+): { category: TCategory; place: TPlace }[] {
+  const selected: { category: TCategory; place: TPlace }[] = [];
+  const selectedPlaceIds = new Set(excludedPlaceIds);
+  const eligibleGroups = groups.map((group) => ({
+    category: group.category,
+    places: group.places.filter((place) => !selectedPlaceIds.has(place.id)),
+  }));
+
+  for (let round = 0; selected.length < limit; round++) {
+    let addedInRound = false;
+
+    for (const group of eligibleGroups) {
+      const place = group.places[round];
+      if (!place || selectedPlaceIds.has(place.id)) continue;
+
+      selected.push({ category: group.category, place });
+      selectedPlaceIds.add(place.id);
+      addedInRound = true;
+      if (selected.length >= limit) break;
+    }
+
+    if (!addedInRound) break;
+  }
+
+  return selected;
+}

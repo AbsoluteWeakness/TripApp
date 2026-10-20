@@ -1,17 +1,33 @@
 import { Injectable } from '@nestjs/common';
 
+interface FakeWeatherDay {
+  date: string;
+  precipitationProbability: number;
+  weatherCode: number;
+  isPoorWeather: boolean;
+}
+
 /**
- * Подменяет WeatherService в e2e: всегда отдаёт пустой прогноз, то есть
- * ветка "плохая погода → меняем прогулки на музеи" в generation.service
- * никогда не срабатывает. Это осознанный выбор — тесты на выбор
- * активностей/расписание должны быть детерминированными и не зависеть
- * от того, какая погода в тестовом городе сегодня по Open-Meteo.
- * Саму погодную логику стоит тестировать отдельно, юнит-тестом на
- * чистую функцию выбора (без реальной сети).
+ * Подменяет WeatherService в e2e: прогноз задаётся тестом, без внешней сети.
  */
 @Injectable()
 export class FakeWeatherService {
-  async getDailyForecast(): Promise<Map<string, never>> {
-    return new Map<string, never>();
+  private readonly forecast = new Map<string, FakeWeatherDay>();
+
+  setDayWeather(date: string, isPoorWeather: boolean): void {
+    this.forecast.set(date, {
+      date,
+      precipitationProbability: isPoorWeather ? 100 : 0,
+      weatherCode: isPoorWeather ? 61 : 0,
+      isPoorWeather,
+    });
+  }
+
+  reset(): void {
+    this.forecast.clear();
+  }
+
+  async getDailyForecast(): Promise<Map<string, FakeWeatherDay>> {
+    return new Map(this.forecast);
   }
 }
