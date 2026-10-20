@@ -89,26 +89,6 @@ function RoutePace({ dots, active }) {
   );
 }
 
-function Stub({ children, style }) {
-  return (
-    <div style={{ position: "relative", ...style }}>
-      <div
-        style={{
-          position: "absolute",
-          left: -22,
-          top: "50%",
-          transform: "translateY(-50%)",
-          width: 20,
-          height: 20,
-          borderRadius: "50%",
-          background: COLORS.paper === style?.bgMatch ? COLORS.paper : "inherit",
-        }}
-      />
-      {children}
-    </div>
-  );
-}
-
 export default function TripPlannerForm({ onGenerated, isAuthenticated = true, initialTrip = null, submitLabel } = {}) {
   const [destination, setDestination] = useState(initialTrip?.city || "");
   const [country, setCountry] = useState(initialTrip?.country || "");

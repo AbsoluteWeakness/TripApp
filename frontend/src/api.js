@@ -7,7 +7,7 @@ async function request(path, options = {}) {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
+      ...options.headers,
     },
   });
 

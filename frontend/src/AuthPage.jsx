@@ -88,7 +88,7 @@ export default function AuthPage({ onAuthenticated }) {
       const payload = isRegister
         ? await register({ name: name.trim(), email, password })
         : await login({ email, password });
-      onAuthenticated && onAuthenticated(payload);
+      if (onAuthenticated) onAuthenticated(payload);
     } catch (requestError) {
       setError(requestError.message);
     } finally {

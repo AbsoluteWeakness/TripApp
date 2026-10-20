@@ -275,7 +275,7 @@ export default function ItineraryPage({ onBack, trip } = {}) {
   const schedule = useMemo(() => computeSchedule(currentDay.activities), [currentDay]);
   const selectedActivity = schedule.find((activity) => activity.id === selectedActivityId) || schedule[0] || null;
 
-  const tripInfo = { ...TRIP, ...(trip || {}) };
+  const tripInfo = { ...TRIP, ...trip };
 
   const allActivities = days.flatMap((d) => d.activities);
   const estimatedSpend = allActivities.reduce((sum, a) => sum + a.cost, 0);

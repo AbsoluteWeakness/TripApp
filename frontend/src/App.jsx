@@ -24,15 +24,6 @@ function loadStoredToken() {
   return localStorage.getItem("tripPlannerToken");
 }
 
-function formatDateRange(startDate, endDate) {
-  if (!startDate || !endDate) return "";
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const startDay = start.toLocaleDateString("ru-RU", { day: "numeric" });
-  const endStr = end.toLocaleDateString("ru-RU", { day: "numeric", month: "long" });
-  return `${startDay}–${endStr}`;
-}
-
 const GENERATION_POLL_INTERVAL_MS = 400;
 const MAX_GENERATION_POLLS = 150;
 
