@@ -101,6 +101,39 @@ describe('TripDays reorder (e2e)', () => {
     }
   });
 
+  it('вставляет активность в занятую позицию, сдвигая остальные активности', async () => {
+    const authRes = await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ name: 'User', email: 'insert-position@example.com', password: '123456' })
+      .expect(201);
+    const token = authRes.body.token;
+    const { tripId, day } = await createReadyTripWithActivities(token);
+    const existingIds = day.activities.map((activity: any) => activity.id);
+    const existingPlaceIds = day.activities.map((activity: any) => activity.placeId);
+    const newPlace = await prisma.place.findFirstOrThrow({
+      where: {
+        city: 'Lisbon',
+        category: day.activities[0].place.category,
+        id: { notIn: existingPlaceIds },
+      },
+    });
+
+    const response = await request(app.getHttpServer())
+      .post(`/api/v1/trips/${tripId}/days/${day.id}/activities`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ placeId: newPlace.id, position: 0 })
+      .expect(201);
+
+    expect(response.body.activities.map((activity: any) => activity.placeId)).toEqual([
+      newPlace.id,
+      ...day.activities.map((activity: any) => activity.placeId),
+    ]);
+    expect(response.body.activities.map((activity: any) => activity.orderIndex)).toEqual(
+      response.body.activities.map((_: any, index: number) => index),
+    );
+    expect(response.body.activities.slice(1).map((activity: any) => activity.id)).toEqual(existingIds);
+  });
+
   it('отклоняет reorder с id активности, которого нет в этом дне', async () => {
     const res = await request(app.getHttpServer())
       .post('/api/v1/auth/register')

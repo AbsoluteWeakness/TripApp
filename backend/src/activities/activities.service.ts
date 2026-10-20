@@ -39,21 +39,35 @@ export class ActivitiesService {
     const place = await this.prisma.place.findUnique({ where: { id: placeId } });
     if (!place) throw new NotFoundException('Объект не найден');
 
-    const existing = await this.prisma.activity.count({ where: { tripDayId: dayId } });
-    const orderIndex = position ?? existing;
+    const existingActivities = await this.prisma.activity.findMany({
+      where: { tripDayId: dayId },
+      orderBy: { orderIndex: 'desc' },
+      select: { id: true, orderIndex: true },
+    });
+    const orderIndex = Math.min(position ?? existingActivities.length, existingActivities.length);
 
-    await this.prisma.activity.create({
-      data: {
-        tripDayId: dayId,
-        placeId,
-        orderIndex,
-        // Плейсхолдеры — recalcAfterActivityChange ниже пересчитает реальные значения.
-        startTime: new Date(),
-        endTime: new Date(),
-        durationMinutes: DEFAULT_DURATION_MINUTES,
-        travelToNextMinutes: DEFAULT_TRAVEL_MINUTES,
-        cost: place.avgCost ?? 0,
-      },
+    await this.prisma.$transaction(async (transaction) => {
+      for (const activity of existingActivities) {
+        if (activity.orderIndex < orderIndex) continue;
+        await transaction.activity.update({
+          where: { id: activity.id },
+          data: { orderIndex: activity.orderIndex + 1 },
+        });
+      }
+
+      await transaction.activity.create({
+        data: {
+          tripDayId: dayId,
+          placeId,
+          orderIndex,
+          // Плейсхолдеры — recalcAfterActivityChange ниже пересчитает реальные значения.
+          startTime: new Date(),
+          endTime: new Date(),
+          durationMinutes: DEFAULT_DURATION_MINUTES,
+          travelToNextMinutes: DEFAULT_TRAVEL_MINUTES,
+          cost: place.avgCost ?? 0,
+        },
+      });
     });
 
     return this.tripDaysService.recalcAfterActivityChange(dayId);
