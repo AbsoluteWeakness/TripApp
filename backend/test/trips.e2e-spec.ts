@@ -227,11 +227,20 @@ describe('Trips (e2e)', () => {
 
   it('GET /trips/:id/places отдаёт альтернативы по категории', async () => {
     const { token } = await registerAndLogin('alternatives@example.com');
+    const start = new Date();
+    start.setDate(start.getDate() + 5);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
 
     const createRes = await request(app.getHttpServer())
       .post('/api/v1/trips')
       .set('Authorization', `Bearer ${token}`)
-      .send(validTripPayload())
+      .send(validTripPayload({
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10),
+        pace: 'RELAXED',
+        categories: ['HISTORY', 'FOOD'],
+      }))
       .expect(201);
 
     await waitForTripReady(prisma, createRes.body.id);
@@ -245,6 +254,41 @@ describe('Trips (e2e)', () => {
     expect(Array.isArray(res.body)).toBe(true);
     expect(res.body.length).toBeGreaterThan(0);
     expect(res.body[0].category).toBe('HISTORY');
+  });
+
+  it('GET /trips/:id/places не предлагает места, уже использованные в маршруте', async () => {
+    const { token } = await registerAndLogin('unused-alternatives@example.com');
+    const start = new Date();
+    start.setDate(start.getDate() + 5);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    const createRes = await request(app.getHttpServer())
+      .post('/api/v1/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send(validTripPayload({
+        startDate: start.toISOString().slice(0, 10),
+        endDate: end.toISOString().slice(0, 10),
+        pace: 'RELAXED',
+        categories: ['HISTORY', 'FOOD'],
+      }))
+      .expect(201);
+    expect(await waitForTripReady(prisma, createRes.body.id)).toBe('READY');
+
+    const trip = await prisma.trip.findUniqueOrThrow({
+      where: { id: createRes.body.id },
+      include: { days: { include: { activities: true } } },
+    });
+    const usedPlaceIds = new Set(trip.days.flatMap((day) => day.activities.map((activity) => activity.placeId)));
+
+    const alternatives = await request(app.getHttpServer())
+      .get(`/api/v1/trips/${createRes.body.id}/places`)
+      .query({ category: 'HISTORY' })
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(alternatives.body.length).toBeGreaterThan(0);
+    expect(alternatives.body.every((place: any) => !usedPlaceIds.has(place.id))).toBe(true);
   });
 
   it('GET /trips/:id/places отклоняет неизвестную категорию', async () => {

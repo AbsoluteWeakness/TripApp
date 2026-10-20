@@ -151,6 +151,11 @@ export class TripsService {
       [category as Category],
       8,
     );
-    return groups[0]?.places ?? [];
+    const usedPlaces = await this.prisma.activity.findMany({
+      where: { tripDay: { tripId } },
+      select: { placeId: true },
+    });
+    const usedPlaceIds = new Set(usedPlaces.map((activity) => activity.placeId));
+    return (groups[0]?.places ?? []).filter((place) => !usedPlaceIds.has(place.id));
   }
 }
