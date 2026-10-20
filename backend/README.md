@@ -1,113 +1,89 @@
-# trip-planner-api
+# Backend API
 
-NestJS + Prisma + PostgreSQL — бэкенд «Генератора путешествий».
-
-Все команды в этом файле выполняются из каталога `backend`.
+Бэкенд «Генератора путешествий»: NestJS, Prisma и PostgreSQL.
 
 ## Требования
-- Docker Desktop
+
 - Node.js 18+
+- Docker Desktop
 
-## Запуск с нуля
+## Первый запуск
 
-1. Перейдите в каталог backend и установите зависимости:
-   ```
-   cd backend
-   npm install
-   ```
-2. Скопируйте `.env.example` в `.env` и при желании поменяйте `JWT_SECRET`:
-   ```
-   cp .env.example .env
-   ```
-   В `.env.example` уже указаны настройки локальной PostgreSQL из
-   `docker-compose.yml`. Для генерации маршрутов также укажите свой
-   `GEOAPIFY_API_KEY` в `.env`. Прогноз погоды загружается из Open-Meteo без
-   ключа; AI-ассистент включается при настройке `OPENAI_API_KEY` (модель можно
-   поменять через `OPENAI_MODEL`).
-3. Поднимите PostgreSQL:
-   ```
-   npm run db:up
-   ```
-4. Накатите схему:
-   ```
-   npm run prisma:migrate
-   ```
-5. Сгенерируйте Prisma Client (обычно делается автоматически после migrate,
-   но если что-то ругается на типы — прогоните руками):
-   ```
-   npm run prisma:generate
-   ```
-6. Запустите API в режиме разработки:
-   ```
-   npm run start:dev
-   ```
-   Поднимется на `http://localhost:3000/api/v1`.
+Из корневого каталога проекта перейдите в `backend` и установите зависимости:
 
-## Запуск после первого раза
-
-После первоначальной настройки достаточно выполнить из `backend`:
-
+```bash
+cd backend
+npm install
+cp .env.example .env
 ```
+
+В `backend/.env` укажите `GEOAPIFY_API_KEY`, необходимый для поиска мест. Значения `DATABASE_URL` для локальной PostgreSQL уже заданы в `.env.example`. Прогноз Open-Meteo не требует ключа; `OPENAI_API_KEY` необязателен и включает AI-помощника. Файл `.env` не добавляйте в Git.
+
+Оставшись в каталоге `backend`, поднимите базу данных, примените миграции, сгенерируйте Prisma Client и запустите API:
+
+```bash
+npm run db:up
+npm run prisma:migrate
+npm run prisma:generate
+npm run start:dev
+```
+
+API будет доступен по адресу `http://localhost:3000/api/v1`.
+
+## Повторный запуск
+
+Из каталога `backend` запустите PostgreSQL и API:
+
+```bash
 npm run db:up
 npm run start:dev
 ```
 
-Если схема Prisma изменилась, повторно выполните `npm run prisma:migrate`.
+Если схема Prisma изменилась, примените миграции командой `npm run prisma:migrate`.
 
 ## Prisma Studio
 
-PostgreSQL должна быть запущена через Docker Desktop:
+При запущенной PostgreSQL выполните из `backend`:
 
-```
-npm run db:up
-```
-
-Для просмотра и редактирования данных откройте Prisma Studio:
-
-```
+```bash
 npm run prisma:studio
 ```
 
-Интерфейс будет доступен по адресу `http://localhost:5555`.
+Интерфейс откроется на `http://localhost:5555`.
 
-## Проверка вручную
+## Тесты и сборка
 
+Из каталога `backend`:
+
+```bash
+npm run test:unit
+npm run test:e2e
+npm run build
 ```
+
+Перед e2e-тестами скрипт автоматически применяет миграции из `backend/.env.test`; настройте там отдельную тестовую базу данных, не production-базу.
+
+## Проверка API вручную
+
+Зарегистрируйте пользователя:
+
+```bash
 curl -X POST http://localhost:3000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Test","email":"test@example.com","password":"123456"}'
 ```
 
-В ответе будет `token` — используйте его в заголовке
-`Authorization: Bearer <token>` для остальных запросов, например:
+Используйте полученный `token` для авторизованных запросов:
 
-```
+```bash
 curl http://localhost:3000/api/v1/trips \
   -H "Authorization: Bearer <token>"
 ```
 
-## Структура
+## Остановка базы данных
 
-```
-src/
-├── auth/         — регистрация, логин, JWT
-├── trips/        — CRUD путешествий + запуск генерации
-├── trip-days/    — reorder активностей, пересборка дня
-├── activities/   — добавление/замена/удаление активностей
-├── budget/       — расчёт бюджета
-├── assistant/    — заглушка под AI-адаптацию маршрута
-├── prisma/       — обёртка над PrismaClient
-└── common/       — общие декораторы (CurrentUser)
-```
+Из каталога `backend` выполните:
 
-Реальный алгоритм построения маршрута (внешние API мест, фильтрация,
-приоритизация, оптимизация переездов) пока не реализован — везде,
-где он должен быть, оставлены комментарии `TODO` в
-`src/trips/generation.service.ts` и `src/budget/budget.service.ts`.
-Сейчас генерация просто создаёт пустые дни по числу ночей, чтобы
-можно было уже сейчас гонять фронт против настоящего API.
-
-## Остановить БД
-```
+```bash
 npm run db:down
 ```

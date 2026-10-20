@@ -1,76 +1,39 @@
-# Генератор путешествий
+# Frontend — Генератор путешествий
 
-Приложение состоит из React/Vite-фронтенда, NestJS API и PostgreSQL.
+Фронтенд приложения: React 18, JavaScript и Vite. Исходный код находится в `frontend/src/`.
 
 ## Требования
 
-- Node.js 18+
-- Docker Desktop
+- Node.js `^20.19.0` или `>=22.12.0`
+- npm
 
-## Первый запуск
+## Запуск
 
-Откройте папку `trip-planner-app` в VS Code и выполните команды ниже.
-
-### 1. Подготовьте backend
-
-В первом терминале:
-
-```bash
-cd backend
-npm install
-cp .env.example .env
-npm run db:up
-npm run prisma:migrate
-npm run prisma:generate
-npm run start:dev
-```
-
-Перед запуском генерации вставьте свой `GEOAPIFY_API_KEY` в `backend/.env`.
-Файл `.env` не добавляется в Git.
-
-API будет доступен по адресу `http://localhost:3000/api/v1`.
-
-PostgreSQL запускается командой `npm run db:up` через Docker Desktop. Чтобы
-открыть интерфейс Prisma Studio для просмотра базы данных, оставьте PostgreSQL
-запущенной и выполните во втором терминале:
-
-```bash
-cd backend
-npm run prisma:studio
-```
-
-Prisma Studio откроется по адресу `http://localhost:5555`.
-
-### 2. Запустите frontend
-
-Во втором терминале, из корня проекта:
+Из корневого каталога проекта установите зависимости и запустите dev-сервер:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Откройте `http://localhost:5173`.
+Откройте `http://localhost:5173`. Изменения в исходниках подхватываются автоматически.
 
-Фронтенд по умолчанию обращается к API по адресу
-`http://localhost:3000/api/v1`. При необходимости его можно изменить через
-`VITE_API_URL`, например:
+Фронтенд по умолчанию обращается к API по адресу `http://localhost:3000/api/v1`. Для экранов, работающих с API, запустите backend по инструкции в [backend/README.md](backend/README.md).
+
+Чтобы указать другой адрес API, задайте `VITE_API_URL` при запуске:
 
 ```bash
 VITE_API_URL=http://localhost:3000/api/v1 npm run dev
 ```
 
-Изменения в коде подхватываются автоматически (hot reload). Основные файлы
-фронтенда находятся в `frontend/src/`.
+## Проверки и сборка
 
-## Остановка
-
-Остановите dev-серверы сочетанием `Ctrl+C`, затем при необходимости выключите
-PostgreSQL:
+Все команды выполняются из корневого каталога проекта:
 
 ```bash
-cd backend
-npm run db:down
+npm test
+npm run lint
+npm run build
 ```
 
-Подробные команды API и Prisma находятся в [backend/README.md](backend/README.md).
+Для локального просмотра production-сборки выполните `npm run preview` после `npm run build`. Собранные файлы появятся в `dist/`.
