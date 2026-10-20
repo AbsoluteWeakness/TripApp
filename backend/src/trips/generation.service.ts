@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PlacesService } from '../places/places.service';
 import { WeatherService } from './weather.service';
 import { CATEGORY_COST_HEURISTIC } from '../places/kinds-map';
+import { distributeItemsAcrossDays } from './distribute-days';
 
 const DAY_START_MINUTES = 9 * 60; // 09:00
 const WALKING_SPEED_KMH = 4.5;
@@ -177,8 +178,6 @@ export class GenerationService {
       const categoryCounts = new Map<Category, number>();
       const pool: { category: Category; place: (typeof byCategory)[number]['places'][number] }[] = [];
 
-      // First give every selected category a fair share. Food must not fill
-      // the remaining slots just because Geoapify returned more restaurants.
       for (let round = 0; pool.length < totalNeeded && round < categoryLimit; round++) {
         for (const group of selectedGroups) {
           if (pool.length >= totalNeeded) break;
@@ -212,37 +211,25 @@ export class GenerationService {
 
       await this.prisma.tripDay.deleteMany({ where: { tripId } });
 
-      let cursor = 0;
+      // Раскладка по дням без дублей: учитывает плохую погоду и помнит уже
+      // занятые места (см. distribute-days.ts)
+      const poorWeatherByDay = Array.from({ length: tripDays }, (_, index) => {
+      const date = new Date(trip.startDate);
+      date.setDate(date.getDate() + index);
+      return forecast.get(date.toISOString().slice(0, 10))?.isPoorWeather ?? false;
+      });
+      const selectionByDay = distributeItemsAcrossDays(uniquePool, perDay, poorWeatherByDay);
+
       for (let dayNumber = 1; dayNumber <= tripDays; dayNumber++) {
         const date = new Date(trip.startDate);
         date.setDate(date.getDate() + (dayNumber - 1));
 
         const day = await this.prisma.tripDay.create({ data: { tripId, dayNumber, date } });
 
-        let selectedDayItems = uniquePool.slice(cursor, cursor + perDay);
-        const dayKey = date.toISOString().slice(0, 10);
-        const dayForecast = forecast.get(dayKey);
-        if (dayForecast?.isPoorWeather) {
-          const indoorItems = uniquePool.filter(({ category }) =>
-            ['CULTURE', 'FOOD', 'SHOPPING', 'ENTERTAINMENT'].includes(category),
-          );
-          const selectedIds = new Set(selectedDayItems.map(({ place }) => place.id));
-          const indoorReplacement = indoorItems.filter(({ place }) => !selectedIds.has(place.id));
-          selectedDayItems = [
-            ...selectedDayItems.map((item) => ({ item, priority: ['NATURE'].includes(item.category) ? 1 : 0 })),
-          ].sort((first, second) => first.priority - second.priority).map(({ item }) => item);
-          for (const item of indoorReplacement) {
-            const outdoorIndex = selectedDayItems.findIndex(({ category }) => category === 'NATURE');
-            if (outdoorIndex < 0) break;
-            selectedDayItems[outdoorIndex] = item;
-          }
-        }
-
         const dayItems = this.orderByWalkingDistance(
-          selectedDayItems,
+          selectionByDay[dayNumber - 1],
           { latitude: point.lat, longitude: point.lon },
         );
-        cursor += perDay;
 
         let minutesCursor = DAY_START_MINUTES;
         for (let idx = 0; idx < dayItems.length; idx++) {
@@ -300,7 +287,8 @@ export class GenerationService {
       });
     } catch (err) {
       this.logger.error(`Генерация путешествия ${tripId} упала: ${(err as Error).message}`);
-      await this.prisma.trip.update({
+      // updateMany не бросает, если путешествие уже удалили во время генерации
+      await this.prisma.trip.updateMany({
         where: { id: tripId },
         data: { status: 'FAILED', currentStep: null },
       });
